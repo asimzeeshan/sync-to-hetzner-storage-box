@@ -1,23 +1,25 @@
 #!/bin/bash
 #
-# sync2sb1.sh - Sync cPanel backups to Hetzner Storage Box (SB-1)
+# sync-cpanel.sh - Sync cPanel backups to Hetzner Storage Box
 # Author: Asim Zeeshan
 # Created: 2025-12-25
 #
+# Configuration is done via environment variables or editing the defaults below
 
 set -uo pipefail
 
-# Configuration - UPDATE THESE VALUES
-STORAGE_BOX="uXXXXXX-subX@uXXXXXX-subX.your-storagebox.de"
-STORAGE_BOX_PORT="23"
-BWLIMIT="51200"  # 40% of 1Gbps = ~50MB/s
-LOG_DIR="/var/log/backup-sync"
-SLACK_WEBHOOK="${SLACK_WEBHOOK:-https://hooks.slack.com/services/YOUR/WEBHOOK/HERE}"
+# Configuration - override via environment variables or edit defaults
+STORAGE_BOX="${STORAGE_BOX:-uXXXXXX-subX@uXXXXXX-subX.your-storagebox.de}"
+STORAGE_BOX_PORT="${STORAGE_BOX_PORT:-23}"
+BWLIMIT="${BWLIMIT:-51200}"  # 40% of 1Gbps = ~50MB/s
+LOG_DIR="${LOG_DIR:-/var/log/backup-sync}"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
+HOSTNAME=$(hostname)
 
 # Create log dir and clean up logs older than 7 days
 mkdir -p "${LOG_DIR}"
-find "${LOG_DIR}" -name "*.log" -mtime +7 -delete
+find "${LOG_DIR}" -name "*.log" -mtime +7 -delete 2>/dev/null || true
 
 format_duration() {
     local s=$1
@@ -32,18 +34,26 @@ format_size() {
     printf "%.1fK" $(echo "scale=1;$b/1024"|bc)
 }
 
+send_slack() {
+    local message="$1"
+    if [ -n "$SLACK_WEBHOOK" ]; then
+        curl -s -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"$message\"}" \
+            "$SLACK_WEBHOOK" >/dev/null 2>&1
+    fi
+}
+
 sync_backup() {
     local type=$1 src=$2
     local log="${LOG_DIR}/${type}_${TIMESTAMP}.log"
     local start_time=$(date +%s)
 
     echo "=== ${type} backup sync started $(date) ===" >> "$log"
+    echo "Host: ${HOSTNAME}" >> "$log"
 
     if [ ! -d "$src" ]; then
         echo "ERROR: Source not found: $src" >> "$log"
-        curl -s -X POST -H 'Content-type: application/json' \
-            --data "{\"text\":\":x: *${type^} Backup Sync Failed* on $(date '+%b %d, %Y')\nSource not found: \`$src\`\"}" \
-            "$SLACK_WEBHOOK" >/dev/null 2>&1
+        send_slack ":x: *${type^} Backup Sync Failed* on ${HOSTNAME}\nSource not found: \`$src\`"
         return 1
     fi
 
@@ -60,9 +70,9 @@ sync_backup() {
     local remote_avail=$(ssh -p "$STORAGE_BOX_PORT" "$STORAGE_BOX" "df -h /home 2>/dev/null | tail -1 | awk '{print \$4}'" 2>/dev/null || echo "N/A")
 
     if [ $rc -eq 0 ]; then
-        curl -s -X POST -H 'Content-type: application/json' --data "{\"text\":\":white_check_mark: *${type^} Backup Sync Completed* on $(date '+%b %d, %Y')\n*Destination:* Hetzner Storage Box (SB-1)\n*Files:* ${file_count} total, ${transferred} transferred\n*Size:* $(format_size $total_size)\n*Duration:* $(format_duration $duration)\n*Disk Available:* ${remote_avail}\n*Log:* \`$log\`\"}" "$SLACK_WEBHOOK" >/dev/null 2>&1
+        send_slack ":white_check_mark: *${type^} Backup Sync Completed* on ${HOSTNAME} ($(date '+%b %d, %Y'))\n*Destination:* Hetzner Storage Box\n*Files:* ${file_count} total, ${transferred} transferred\n*Size:* $(format_size $total_size)\n*Duration:* $(format_duration $duration)\n*Disk Available:* ${remote_avail}\n*Log:* \`$log\`"
     else
-        curl -s -X POST -H 'Content-type: application/json' --data "{\"text\":\":x: *${type^} Backup Sync FAILED* on $(date '+%b %d, %Y')\n*Destination:* Hetzner Storage Box (SB-1)\n*Duration:* $(format_duration $duration)\n*Log:* \`$log\`\"}" "$SLACK_WEBHOOK" >/dev/null 2>&1
+        send_slack ":x: *${type^} Backup Sync FAILED* on ${HOSTNAME} ($(date '+%b %d, %Y'))\n*Destination:* Hetzner Storage Box\n*Duration:* $(format_duration $duration)\n*Exit Code:* ${rc}\n*Log:* \`$log\`"
     fi
 
     return $rc
