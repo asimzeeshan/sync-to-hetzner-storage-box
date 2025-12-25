@@ -121,6 +121,10 @@ tail -f /var/log/backup-sync/weekly_*.log
 | 40% | 50 MB/s | 51200 |
 | 25% | 31.25 MB/s | 32000 |
 
+## Author
+
+[Asim Zeeshan](https://www.linkedin.com/in/asimzeeshan/)
+
 ## License
 
 [MIT](LICENSE)
