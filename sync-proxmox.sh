@@ -4,18 +4,21 @@
 # Author: Asim Zeeshan
 # Created: 2025-12-26
 #
-# Configuration is done via environment variables or editing the defaults below
 
 set -uo pipefail
 
-# Configuration - override via environment variables or edit defaults
-STORAGE_BOX="${STORAGE_BOX:-uXXXXXX-subX@uXXXXXX-subX.your-storagebox.de}"
-STORAGE_BOX_PORT="${STORAGE_BOX_PORT:-23}"
-SOURCE_DIR="${SOURCE_DIR:-/var/lib/vz/dump/}"
-DEST_DIR="${DEST_DIR:-/home/dump/}"
-BWLIMIT="${BWLIMIT:-51200}"  # 40% of 1Gbps = ~50MB/s
-LOG_DIR="${LOG_DIR:-/var/log/backup-sync}"
-SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+# =============================================================================
+# CONFIGURATION - Edit these values for your environment
+# =============================================================================
+STORAGE_BOX="uXXXXXX-subX@uXXXXXX-subX.your-storagebox.de"
+STORAGE_BOX_PORT="23"
+SOURCE_DIR="/var/lib/vz/dump/"
+DEST_DIR="/home/dump/"
+BWLIMIT="51200"  # KB/s (51200 = ~50MB/s = 40% of 1Gbps)
+LOG_DIR="/var/log/backup-sync"
+SLACK_WEBHOOK=""  # Leave empty to disable Slack notifications
+# =============================================================================
+
 TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
 HOSTNAME=$(hostname)
 
@@ -56,7 +59,7 @@ sync_backup() {
 
     if [ ! -d "$SOURCE_DIR" ]; then
         echo "ERROR: Source not found: $SOURCE_DIR" >> "$log"
-        send_slack ":x: *Proxmox Backup Sync Failed* on ${HOSTNAME}\nSource not found: \`$SOURCE_DIR\`"
+        send_slack ":x: *Proxmox Backup Sync Failed* on ${HOSTNAME} ($(date '+%b %d, %Y'))\nSource not found: \`$SOURCE_DIR\`"
         return 1
     fi
 
